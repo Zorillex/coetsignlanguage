@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SignWave - AI Sign Language to Text & Voice Converter</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <!-- MediaPipe Hands & Supporting Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+
+  <!-- Canvas Confetti -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+  <!-- Custom Styles -->
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="min-h-screen flex flex-col selection:bg-indigo-500 selection:text-white">
+
+  <!-- ========================================== -->
+  <!-- Top Header Bar                             -->
+  <!-- ========================================== -->
+  <header class="border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-md sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      
+      <!-- Logo & Title -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-500 flex items-center justify-center shadow-lg shadow-indigo-600/30">
+          <i class="fa-solid fa-hands-asl-interpreting text-xl text-white"></i>
+        </div>
+        <div>
+          <h1 class="text-lg font-black tracking-tight text-white flex items-center gap-2">
+            SignWave <span class="text-xs px-2 py-0.5 rounded-full font-bold bg-indigo-900/60 text-indigo-300 border border-indigo-700/60">AI Real-Time</span>
+          </h1>
+          <p class="text-xs text-slate-400">Sign Language to Text & Speech Converter</p>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="hidden md:flex items-center gap-1 bg-slate-900/80 p-1.5 rounded-2xl border border-slate-800">
+        <button id="tab-btn-converter" class="px-4 py-2 text-xs font-bold rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 transition flex items-center gap-2">
+          <i class="fa-solid fa-language"></i> Live Converter
+        </button>
+        <button id="tab-btn-practice" class="px-4 py-2 text-xs font-bold rounded-xl text-slate-400 hover:text-white transition flex items-center gap-2">
+          <i class="fa-solid fa-graduation-cap"></i> Practice Trainer
+        </button>
+        <button id="tab-btn-dictionary" class="px-4 py-2 text-xs font-bold rounded-xl text-slate-400 hover:text-white transition flex items-center gap-2">
+          <i class="fa-solid fa-book-open"></i> ASL Dictionary
+        </button>
+      </nav>
+
+      <!-- Status Badges -->
+      <div class="flex items-center gap-2 sm:gap-3">
+        <span id="ai-model-pill" class="text-xs px-2.5 py-1 rounded-full bg-slate-800 text-slate-400 border border-slate-700 flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+          <span>Loading AI...</span>
+        </span>
+        <span id="camera-status-pill" class="px-3 py-1 text-xs font-semibold rounded-full bg-slate-800 text-slate-400 border border-slate-700">
+          Camera Off
+        </span>
+        <span id="fps-counter" class="hidden sm:inline-block text-xs font-mono text-slate-400 bg-slate-900 px-2 py-1 rounded-md border border-slate-800">0 FPS</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Mobile Tab Bar -->
+  <div class="md:hidden flex border-b border-slate-800 bg-slate-900/90 px-4 py-2 gap-2 overflow-x-auto">
+    <button onclick="window.app.switchTab('converter')" class="flex-1 py-1.5 px-3 text-xs font-bold rounded-lg bg-indigo-600 text-white whitespace-nowrap">
+      Live Converter
+    </button>
+    <button onclick="window.app.switchTab('practice')" class="flex-1 py-1.5 px-3 text-xs font-bold rounded-lg bg-slate-800 text-slate-300 whitespace-nowrap">
+      Practice Trainer
+    </button>
+    <button onclick="window.app.switchTab('dictionary')" class="flex-1 py-1.5 px-3 text-xs font-bold rounded-lg bg-slate-800 text-slate-300 whitespace-nowrap">
+      Dictionary
+    </button>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- Main Application Body                      -->
+  <!-- ========================================== -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+
+    <!-- Grid Container: Video Feed on Left, Interactive Workspace on Right -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <!-- ========================================== -->
+      <!-- Left Column: Camera Feed & Vision HUD (7 cols) -->
+      <!-- ========================================== -->
+      <section class="lg:col-span-7 space-y-4">
+        
+        <!-- Video Canvas Card -->
+        <div class="glass-panel rounded-3xl p-4 sm:p-5 relative overflow-hidden border border-slate-800">
+          
+          <!-- Top HUD Badges Inside Video Container -->
+          <div class="video-hud-wrapper relative">
+            <video id="webcam-video" autoplay playsinline muted></video>
+            <canvas id="output-canvas"></canvas>
+
+            <!-- Prominent Camera Start Overlay -->
+            <div id="camera-overlay" class="absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/85 backdrop-blur-sm p-6 text-center transition-all duration-300">
+              <div class="w-16 h-16 sm:w-20 sm:h-20 rounded-3xl bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 text-2xl sm:text-3xl mb-4 shadow-xl shadow-indigo-600/20">
+                <i class="fa-solid fa-camera"></i>
+              </div>
+              <h3 class="text-xl sm:text-2xl font-black text-white mb-2">Camera is Offline</h3>
+              <p class="text-xs sm:text-sm text-slate-300 max-w-sm mb-6 leading-relaxed">
+                Click below to turn on your webcam and convert American Sign Language into text and voice in real-time.
+              </p>
+              <button id="btn-start-camera-overlay" class="py-3 px-8 rounded-2xl font-black text-sm bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white shadow-xl shadow-indigo-600/40 transition transform hover:scale-105 active:scale-95 flex items-center gap-3">
+                <i class="fa-solid fa-video text-base"></i> Turn On Camera Now
+              </button>
+              <div id="camera-error-msg" class="hidden text-xs text-rose-300 bg-rose-950/80 border border-rose-800/80 rounded-xl p-3.5 mt-4 max-w-md text-left">
+                <!-- Injected on error -->
+              </div>
+            </div>
+
+            <!-- Real-time Gesture Floating Badge (HUD) -->
+            <div class="absolute top-4 left-4 z-20 flex flex-col gap-2 pointer-events-none">
+              <div class="glass-panel bg-slate-950/80 border border-slate-700/80 rounded-2xl px-4 py-2 flex items-center gap-3 backdrop-blur-md">
+                <div>
+                  <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Detected Sign</div>
+                  <div id="live-sign-badge" class="text-3xl font-black text-amber-300 tracking-wider">--</div>
+                </div>
+                <div class="border-l border-slate-700/80 pl-3">
+                  <div id="confidence-badge" class="text-xs font-bold text-indigo-400">0% Match</div>
+                  <div class="text-[10px] text-slate-400 font-medium">Real-time</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Hold-to-Confirm Bottom Bar Overlay -->
+            <div class="absolute bottom-4 left-4 right-4 z-20 pointer-events-none">
+              <div class="glass-panel bg-slate-950/80 border border-slate-700/80 rounded-xl p-2.5 backdrop-blur-md">
+                <div class="flex justify-between items-center text-xs mb-1.5 font-semibold text-slate-300">
+                  <span class="flex items-center gap-1.5">
+                    <i class="fa-solid fa-clock-rotate-left text-indigo-400"></i> Hold to Type Confirmation
+                  </span>
+                  <span id="hold-progress-text" class="text-indigo-400 font-mono">Ready</span>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden border border-slate-700/50">
+                  <div id="hold-progress-fill" class="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 h-2 rounded-full w-0 transition-all duration-75"></div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Camera Controls Toolbar -->
+          <div class="mt-4 flex flex-wrap items-center justify-between gap-3 pt-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <button id="btn-toggle-cam" class="px-5 py-2.5 rounded-xl text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 transition flex items-center">
+                <i class="fa-solid fa-video mr-2"></i> Start Camera
+              </button>
+              
+              <button id="btn-flip-cam" title="Mirror / Flip Camera" class="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-400 border border-slate-700 transition">
+                <i class="fa-solid fa-repeat"></i>
+              </button>
+
+              <button id="btn-skeleton" title="Toggle Hand Skeleton Mesh" class="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-400 border border-slate-700 transition">
+                <i class="fa-solid fa-bone"></i>
+              </button>
+            </div>
+
+            <!-- Camera selector & Hold Speed -->
+            <div class="flex items-center gap-3">
+              <div class="flex items-center gap-2">
+                <label for="hold-speed-slider" class="text-xs text-slate-400 font-medium">Hold:</label>
+                <input id="hold-speed-slider" type="range" min="400" max="1500" step="50" value="700" class="w-20 cursor-pointer">
+                <span id="hold-speed-label" class="text-xs font-mono text-indigo-400">0.7s</span>
+              </div>
+
+              <select id="camera-select" class="bg-slate-800 text-slate-300 text-xs rounded-xl px-3 py-2 border border-slate-700 focus:outline-none focus:border-indigo-500">
+                <option value="">Default Camera</option>
+              </select>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Virtual Tester & Simulator (Works without camera!) -->
+        <div class="glass-panel rounded-2xl p-4 border border-slate-800">
+          <div class="flex items-center justify-between mb-3 cursor-pointer select-none" onclick="document.getElementById('virtual-panel').classList.toggle('hidden')">
+            <div class="flex items-center gap-2">
+              <i class="fa-solid fa-keyboard text-indigo-400"></i>
+              <span class="text-sm font-bold text-slate-200">Virtual Sign Injector (No Camera / Instant Testing)</span>
+            </div>
+            <i class="fa-solid fa-chevron-down text-slate-400 text-xs"></i>
+          </div>
+          <div id="virtual-panel" class="space-y-3">
+            <p class="text-xs text-slate-400">Click any sign below to simulate instant detection, typing, and voice output:</p>
+            <div id="virtual-keys-grid" class="grid grid-cols-7 sm:grid-cols-9 gap-1.5">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ========================================== -->
+      <!-- Right Column: Interactive Tabbed Workspace (5 cols) -->
+      <!-- ========================================== -->
+      <section class="lg:col-span-5 space-y-4">
+        
+        <!-- ========================================== -->
+        <!-- VIEW 1: LIVE CONVERTER & TEXT-TO-SPEECH    -->
+        <!-- ========================================== -->
+        <div id="view-converter" class="space-y-4">
+          
+          <!-- Converted Output Card -->
+          <div class="glass-panel rounded-3xl p-5 border border-slate-800 space-y-4 flex flex-col">
+            
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <i class="fa-solid fa-comment-dots text-indigo-400 text-lg"></i>
+                <h2 class="text-base font-bold text-white">Converted Text Output</h2>
+              </div>
+              <div class="flex items-center gap-1">
+                <button id="btn-copy" title="Copy Text" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition flex items-center gap-1.5">
+                  <i class="fa-regular fa-copy"></i> Copy
+                </button>
+                <button id="btn-download" title="Download Transcript" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition flex items-center gap-1.5">
+                  <i class="fa-solid fa-download"></i> Save
+                </button>
+                <button id="btn-clear" title="Clear Text" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-800 transition flex items-center gap-1.5">
+                  <i class="fa-solid fa-trash-can"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- Textarea for Converted Text -->
+            <div class="relative">
+              <textarea id="converted-text" rows="7" placeholder="Sign letters or words in front of your camera to start translating..." class="w-full bg-slate-900/90 text-slate-100 placeholder-slate-500 rounded-2xl p-4 text-lg font-medium border border-slate-700/80 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 resize-none leading-relaxed transition"></textarea>
+            </div>
+
+            <!-- Smart Word Suggestions / Autocomplete Chips -->
+            <div>
+              <div class="text-[11px] uppercase tracking-wider font-bold text-slate-400 mb-1.5 flex items-center gap-1.5">
+                <i class="fa-solid fa-wand-magic-sparkles text-amber-400"></i> Smart Predictions & Quick Words
+              </div>
+              <div id="suggestions-container" class="flex flex-wrap gap-1.5 min-h-[32px]">
+                <!-- Populated dynamically -->
+              </div>
+            </div>
+
+            <!-- Text Actions Toolbar -->
+            <div class="grid grid-cols-3 gap-2 pt-2">
+              <button id="btn-speak" class="py-2.5 px-3 rounded-xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-lg shadow-emerald-600/20 transition flex items-center justify-center gap-2">
+                <i class="fa-solid fa-volume-high"></i> Speak Text
+              </button>
+              <button id="btn-space" class="py-2.5 px-3 rounded-xl font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition flex items-center justify-center gap-2">
+                <i class="fa-solid fa-arrows-left-right"></i> Space
+              </button>
+              <button id="btn-backspace" class="py-2.5 px-3 rounded-xl font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition flex items-center justify-center gap-2">
+                <i class="fa-solid fa-delete-left"></i> Delete
+              </button>
+            </div>
+
+          </div>
+
+          <!-- Speech & Voice Settings Accordion -->
+          <div class="glass-panel rounded-2xl p-4 border border-slate-800 space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-300 flex items-center gap-2">
+                <i class="fa-solid fa-sliders text-indigo-400"></i> Text-to-Speech Settings
+              </span>
+              <label class="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-300">
+                <input id="auto-speak-toggle" type="checkbox" class="w-4 h-4 rounded text-indigo-600 bg-slate-800 border-slate-700 focus:ring-0">
+                Auto-speak completed words
+              </label>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div>
+                <label for="voice-select" class="text-[10px] uppercase font-bold text-slate-400">Voice</label>
+                <select id="voice-select" class="w-full bg-slate-800 text-slate-200 text-xs rounded-xl px-2.5 py-1.5 border border-slate-700 focus:outline-none focus:border-indigo-500 mt-1">
+                  <!-- Voices populated dynamically -->
+                </select>
+              </div>
+
+              <div class="flex gap-3">
+                <div class="flex-1">
+                  <div class="flex justify-between text-[10px] uppercase font-bold text-slate-400">
+                    <span>Speed</span>
+                  </div>
+                  <input id="rate-slider" type="range" min="0.5" max="2" step="0.1" value="1" class="w-full mt-2 cursor-pointer">
+                </div>
+                <div class="flex-1">
+                  <div class="flex justify-between text-[10px] uppercase font-bold text-slate-400">
+                    <span>Pitch</span>
+                  </div>
+                  <input id="pitch-slider" type="range" min="0.5" max="2" step="0.1" value="1" class="w-full mt-2 cursor-pointer">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Gestures Cheatsheet Card -->
+          <div class="glass-panel rounded-2xl p-4 border border-slate-800 text-xs space-y-2">
+            <div class="font-bold text-slate-300 flex items-center gap-2">
+              <i class="fa-solid fa-lightbulb text-amber-400"></i> Helpful Control Gestures:
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-slate-400">
+              <div class="p-2 rounded-lg bg-slate-900/60 border border-slate-800">
+                <span class="font-bold text-indigo-300">Flat Palm:</span> "HELLO"
+              </div>
+              <div class="p-2 rounded-lg bg-slate-900/60 border border-slate-800">
+                <span class="font-bold text-indigo-300">Thumb + Index + Pinky:</span> "I LOVE YOU"
+              </div>
+              <div class="p-2 rounded-lg bg-slate-900/60 border border-slate-800">
+                <span class="font-bold text-indigo-300">Thumbs Up:</span> "GOOD"
+              </div>
+              <div class="p-2 rounded-lg bg-slate-900/60 border border-slate-800">
+                <span class="font-bold text-indigo-300">V Sign:</span> "PEACE" / "V"
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ========================================== -->
+        <!-- VIEW 2: PRACTICE TRAINER & QUIZ MODE       -->
+        <!-- ========================================== -->
+        <div id="view-practice" class="hidden space-y-4">
+          <div class="glass-panel rounded-3xl p-6 border border-slate-800 space-y-6 text-center">
+            
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3 text-left">
+              <div>
+                <h2 class="text-lg font-black text-white">ASL Practice Trainer</h2>
+                <p class="text-xs text-slate-400">Perform the prompted sign to earn points!</p>
+              </div>
+              <div class="flex items-center gap-3">
+                <div class="text-right">
+                  <div class="text-[10px] uppercase font-bold text-slate-400">Score</div>
+                  <div id="practice-score" class="text-lg font-black text-amber-400">0</div>
+                </div>
+                <div class="text-right border-l border-slate-800 pl-3">
+                  <div class="text-[10px] uppercase font-bold text-slate-400">Streak</div>
+                  <div id="practice-streak" class="text-lg font-black text-emerald-400">0 🔥</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Big Target Sign Prompt -->
+            <div class="py-6">
+              <div class="text-xs uppercase font-extrabold text-indigo-400 tracking-wider mb-2">Show me the sign for:</div>
+              <div id="practice-target-sign" class="text-7xl font-black text-white tracking-widest pulse-target my-2">A</div>
+              <p class="text-xs text-slate-400 mt-2">Hold the sign steady in camera view for 0.7s</p>
+            </div>
+
+            <!-- Hint Box -->
+            <div id="practice-hint-box" class="hidden text-left">
+              <!-- Populated dynamically -->
+            </div>
+
+            <!-- Practice Toolbar Buttons -->
+            <div class="flex gap-3">
+              <button id="practice-hint-btn" class="flex-1 py-3 px-4 rounded-xl font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition flex items-center justify-center gap-2">
+                <i class="fa-regular fa-lightbulb text-amber-400"></i> Show Hint
+              </button>
+              <button id="practice-next-btn" class="flex-1 py-3 px-4 rounded-xl font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 transition flex items-center justify-center gap-2">
+                <i class="fa-solid fa-forward"></i> Next Sign
+              </button>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- VIEW 3: ASL DICTIONARY & REFERENCE         -->
+        <!-- ========================================== -->
+        <div id="view-dictionary" class="hidden space-y-4">
+          <div class="glass-panel rounded-3xl p-5 border border-slate-800 space-y-4">
+            
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 class="text-lg font-black text-white">ASL Reference Guide</h2>
+                <p class="text-xs text-slate-400">Alphabet & Common Sign Library</p>
+              </div>
+
+              <!-- Search & Filter Controls -->
+              <div class="flex items-center gap-2">
+                <div class="relative">
+                  <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-xs text-slate-400"></i>
+                  <input id="dict-search-input" type="text" placeholder="Search signs..." class="bg-slate-900 text-slate-200 text-xs rounded-xl pl-8 pr-3 py-2 border border-slate-700 focus:outline-none focus:border-indigo-500 w-36 sm:w-44">
+                </div>
+                <select id="dict-filter-select" class="bg-slate-900 text-slate-200 text-xs rounded-xl px-2.5 py-2 border border-slate-700 focus:outline-none focus:border-indigo-500">
+                  <option value="all">All</option>
+                  <option value="letter">Letters (A-Z)</option>
+                  <option value="phrase">Phrases</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Cards Grid -->
+            <div id="dict-cards-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[520px] overflow-y-auto pr-1">
+              <!-- Populated dynamically -->
+            </div>
+
+          </div>
+        </div>
+
+      </section>
+
+    </div>
+
+  </main>
+
+  <!-- ========================================== -->
+  <!-- Sign Detail Modal Dialog                   -->
+  <!-- ========================================== -->
+  <div id="dict-detail-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+    <div class="glass-panel bg-slate-900 border border-slate-700 rounded-3xl max-w-md w-full p-6 relative shadow-2xl">
+      <button id="dict-modal-close" class="absolute top-5 right-5 text-slate-400 hover:text-white p-2">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+      <div id="dict-modal-content">
+        <!-- Injected via app.js -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="border-t border-slate-800/80 bg-slate-950/40 py-4 mt-8 text-center text-xs text-slate-500">
+    SignWave AI Sign Language to Text &bull; Client-side Computer Vision powered by MediaPipe Hands &bull; Web Speech API
+  </footer>
+
+  <!-- Application Scripts -->
+  <script src="js/dictionary.js"></script>
+  <script src="js/gesture-recognizer.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
